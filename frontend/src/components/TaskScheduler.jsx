@@ -1,3 +1,4 @@
+// frontend/src/components/TaskScheduler.jsx
 import React from 'react';
 
 export default function TaskScheduler({ session, onUpdateTasks }) {
@@ -12,14 +13,20 @@ export default function TaskScheduler({ session, onUpdateTasks }) {
   const { tasks = [], status: sessionStatus } = session;
 
   const moveTask = (index, direction) => {
-    if (sessionStatus === 'running') return; // Enforce lock rules
     const updatedTasks = [...tasks];
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
     if (targetIndex < 0 || targetIndex >= updatedTasks.length) return;
 
-    const temp = updatedTasks[index];
-    updatedTasks[index] = updatedTasks[targetIndex];
-    updatedTasks[targetIndex] = temp;
+    const currentTask = updatedTasks[index];
+    const targetTask = updatedTasks[targetIndex];
+
+    // Lock condition: Do not allow moving running/completed tasks, 
+    // and do not allow swapping pending tasks INTO running/completed slots!
+    if (['running', 'completed'].includes(currentTask.status)) return;
+    if (['running', 'completed'].includes(targetTask.status)) return;
+
+    updatedTasks[index] = targetTask;
+    updatedTasks[targetIndex] = currentTask;
     onUpdateTasks(updatedTasks);
   };
 
@@ -53,17 +60,18 @@ export default function TaskScheduler({ session, onUpdateTasks }) {
                     </span>
                   </div>
                   
-                  {sessionStatus !== 'running' && (
+                  {/* 🌟 THE FIX IS HERE: We only check the task.status because we are safely inside the .map() enclosure! */}
+                  {!['running', 'completed'].includes(task.status) && (
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                       <button 
-                        disabled={index === 0}
+                        disabled={index === 0 || ['running', 'completed'].includes(tasks[index - 1]?.status)}
                         onClick={() => moveTask(index, 'up')}
                         className="p-1 text-xs text-zinc-400 hover:text-zinc-100 disabled:opacity-20 cursor-pointer"
                       >
                         ▲
                       </button>
                       <button 
-                        disabled={index === tasks.length - 1}
+                        disabled={index === tasks.length - 1 || ['running', 'completed'].includes(tasks[index + 1]?.status)}
                         onClick={() => moveTask(index, 'down')}
                         className="p-1 text-xs text-zinc-400 hover:text-zinc-100 disabled:opacity-20 cursor-pointer"
                       >

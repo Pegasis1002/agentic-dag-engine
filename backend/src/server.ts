@@ -118,7 +118,7 @@ io.on('connection', (socket) => {
     // 5. Save customized client scheduling changes (reordering/additions)
     socket.on('update_tasks', (data: { sessionId: string; tasks: TaskNode[] }) => {
         const session = sessions.get(data.sessionId);
-        if (session && session.status !== 'running') {
+        if (session) {
             session.tasks = data.tasks;
             socket.emit('session_selected', session);
         }

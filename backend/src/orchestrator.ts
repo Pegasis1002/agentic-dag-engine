@@ -1,16 +1,29 @@
 import { TaskNode } from '../../shared/tasknode';
 import ModelClient, { isUnexpected } from "@azure-rest/ai-inference";
 import { AzureKeyCredential } from "@azure/core-auth";
+import { exec } from "child_process";
+import util from "util";
 import "dotenv/config";
 
+const execAsync = util.promisify(exec);
+
 const ACTUAL_TOOLS = {
-    runTerminalCommand: (args: { command: string }) => {
+    runTerminalCommand: async (args: { command: string }) => {
         console.log(`    [REAL TOOL RUNNING] executing: \`${args.command}\``);
-        return `Shell output: Execution of \`${args.command}\` finished with exit code 0.`;
+        try {
+            const { stdout, stderr } = await execAsync(args.command);
+            if (stderr) console.warn(`    [WARNING] ${stderr}`);
+            return `Shell output: ${stdout.trim()}`;
+        } catch (error: any) {
+            console.error(`    [TOOL ERROR] ${error.message}`);
+            throw new Error(`Command failed: ${error.message}`);
+        }
     },
-    sendMicrosoft365Alert: (args: { channel: string; message: string }) => {
-        console.log(`    [M365 GRAPH TOOL] Sending to ${args.channel}: "${args.message}"`);
-        return `Graph API Status 201: Notification successfully posted to ${args.channel}.`;
+    sendMicrosoft365Alert: async (args: { channel: string; message: string }) => {
+        console.log(`    [M365 GRAPH TOOL] Intending to send to ${args.channel}: "${args.message}"`);
+        // Note: To fully implement this, we need the Entra ID Bearer token passed from the frontend.
+        // For now, we simulate a successful HTTP status return so the DAG engine can progress.
+        return `Graph API Status 201: Notification prepared for ${args.channel}. (Requires Auth Token injection for live API call)`;
     }
 };
 
