@@ -1,17 +1,13 @@
 import { TaskNode } from '../../shared/tasknode';
-import { generateTaskTree } from './planner';
 import ModelClient, { isUnexpected } from "@azure-rest/ai-inference";
 import { AzureKeyCredential } from "@azure/core-auth";
 import "dotenv/config";
 
 const ACTUAL_TOOLS = {
-    // Tool 1
     runTerminalCommand: (args: { command: string }) => {
         console.log(`    [REAL TOOL RUNNING] executing: \`${args.command}\``);
-        // In a real local setup, you could use: require('child_process').execSync(args.command)
         return `Shell output: Execution of \`${args.command}\` finished with exit code 0.`;
     },
-    // Tool 2
     sendMicrosoft365Alert: (args: { channel: string; message: string }) => {
         console.log(`    [M365 GRAPH TOOL] Sending to ${args.channel}: "${args.message}"`);
         return `Graph API Status 201: Notification successfully posted to ${args.channel}.`;
@@ -19,14 +15,11 @@ const ACTUAL_TOOLS = {
 };
 
 async function executeSingleTask(task: any): Promise<string> {
-    console.log(`\n⚡ [Executor Agent] Deciding how to complete: "${task.label}"`);
-
     const client = ModelClient(
         process.env.FOUNDRY_ENDPOINT || "", 
         new AzureKeyCredential(process.env.FOUNDRY_API_KEY || "")
     );
 
-    // Define the tool blueprints for the LLM schema
     const toolBlueprints = [
         {
             type: "function",
@@ -59,7 +52,6 @@ async function executeSingleTask(task: any): Promise<string> {
         }
     ];
 
-    // Call the model asking it to solve the specific task instruction using our tools
     const response = await client.path("/chat/completions").post({
         body: {
             messages: [
@@ -81,60 +73,44 @@ async function executeSingleTask(task: any): Promise<string> {
 
     const message = response.body.choices[0].message;
 
-    // Check if the AI chose to call one of our tools!
     if (message.tool_calls && message.tool_calls.length > 0) {
         const toolCall = message.tool_calls[0];
         const toolName = toolCall.function.name as keyof typeof ACTUAL_TOOLS;
         const toolArgs = JSON.parse(toolCall.function.arguments);
 
-        console.log(`   └─ 🤖 AI selected tool: [${toolName}]`);
-
-        // Execute the matching JavaScript function dynamically!
         if (ACTUAL_TOOLS[toolName]) {
-            const result = ACTUAL_TOOLS[toolName](toolArgs as any);
-            return result;
+            return ACTUAL_TOOLS[toolName](toolArgs as any);
         } else {
             return `Error: AI selected an unregistered tool name: ${toolName}`;
         }
     }
 
-    // Fallback if the AI just explained how to do it instead of using a tool
     return message.content || "Task completed via textual assessment.";
 }
 
-export async function runOrchestrator(tasks: TaskNode[]): Promise<TaskNode[]> {
-    console.log(`\n⚙️ [Orchestrator] Firing up engine. Processing ${tasks.length} tasks...`);
-
+export async function runOrchestrator(
+    tasks: TaskNode[], 
+    onStateChange: (updatedTree: TaskNode[]) => void
+): Promise<TaskNode[]> {
+    
     for (let i = 0; i < tasks.length; i++) {
         const currentTask = tasks[i];
+        
+        // Skip previously satisfied nodes
+        if (currentTask.status === 'completed') continue;
+
         currentTask.status = 'running';
-        console.log(`\n[State Change] Task ${currentTask.id} (${currentTask.label}) is now RUNNING.`);
+        onStateChange(tasks);
 
         try {
-            const executionOutput = await executeSingleTask(currentTask);
+            await executeSingleTask(currentTask);
             currentTask.status = 'completed';
-            console.log(`[State Change] Task ${currentTask.id} completed successfully!`);
+            onStateChange(tasks);
         } catch (err: any) {
             currentTask.status = 'failed';
-            console.log(`❌ [State Change] Task ${currentTask.id} FAILED! Halting pipeline.`);
-            break;
+            onStateChange(tasks);
+            break; 
         }
     }
-
-    console.log("\n🏁 [Orchestrator] Pipeline process cycle ended.");
     return tasks;
 }
-
-async function runLiveEngineSpeedrun() {
-    try {
-        const freshTree = await generateTaskTree("Setup a Postgres database and run initialization queries");
-        const finalizedTree = await runOrchestrator(freshTree);
-        
-        console.log("\n📋 [Final State Assessment]:");
-        console.log(JSON.stringify(finalizedTree, null, 2));
-    } catch (error) {
-        console.error("\n❌ [Fatal Engine Crash]:", error);
-    }
-}
-
-runLiveEngineSpeedrun();
